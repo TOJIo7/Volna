@@ -1,5 +1,6 @@
 package tj.volna.music
 
+import android.net.Uri
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import java.io.ByteArrayInputStream
@@ -7,23 +8,36 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Forwards /api/... requests from the page to the Audius catalog.
+ * Forwards the page's requests to the music catalogs:
+ *   /api/...      -> Audius (full tracks)
+ *   /dz/...       -> Deezer (search and 30-second previews)
+ *   /ext?u=<url>  -> Deezer preview audio files
  * Because the page sees everything on its own address, the equalizer can process the sound
  * and seeking works (Range requests are passed through).
  */
 object NetProxy {
-    private const val BASE = "https://api.audius.co/v1"
 
-    fun proxy(request: WebResourceRequest): WebResourceResponse {
-        val u = request.url
-        val path = (u.encodedPath ?: "").removePrefix("/api")
-        val query = u.encodedQuery?.let { "?$it" } ?: ""
+    fun audius(u: Uri): String =
+        "https://api.audius.co/v1" + (u.encodedPath ?: "").removePrefix("/api") + (u.encodedQuery?.let { "?$it" } ?: "")
+
+    fun deezer(u: Uri): String =
+        "https://api.deezer.com" + (u.encodedPath ?: "").removePrefix("/dz") + (u.encodedQuery?.let { "?$it" } ?: "")
+
+    /** Only Deezer's audio servers are allowed through /ext. */
+    fun external(u: Uri): String? {
+        val target = u.getQueryParameter("u") ?: return null
+        if (!target.startsWith("https://")) return null
+        val host = Uri.parse(target).host ?: return null
+        return if (host.endsWith(".dzcdn.net") || host.endsWith(".deezer.com")) target else null
+    }
+
+    fun proxy(request: WebResourceRequest, target: String): WebResourceResponse {
         return try {
-            val conn = URL(BASE + path + query).openConnection() as HttpURLConnection
+            val conn = URL(target).openConnection() as HttpURLConnection
             conn.connectTimeout = 15000
             conn.readTimeout = 30000
             conn.instanceFollowRedirects = true
-            conn.setRequestProperty("User-Agent", "VolnaMusic/1.0 (Android)")
+            conn.setRequestProperty("User-Agent", "VolnaMusic/1.1 (Android)")
             for ((k, v) in request.requestHeaders) {
                 if (k.equals("Range", true) || k.equals("Accept", true)) conn.setRequestProperty(k, v)
             }
@@ -43,6 +57,9 @@ object NetProxy {
             WebResourceResponse("text/plain", "utf-8", 502, "Bad Gateway", mapOf("Access-Control-Allow-Origin" to "*"), empty())
         }
     }
+
+    fun forbidden(): WebResourceResponse =
+        WebResourceResponse("text/plain", "utf-8", 403, "Forbidden", mapOf("Access-Control-Allow-Origin" to "*"), empty())
 
     fun reason(code: Int): String = when (code) {
         200 -> "OK"

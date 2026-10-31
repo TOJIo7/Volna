@@ -17,6 +17,7 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -33,6 +34,20 @@ class MainActivity : ComponentActivity() {
     private lateinit var web: WebView
     private lateinit var assetLoader: WebViewAssetLoader
     private var netCallback: ConnectivityManager.NetworkCallback? = null
+    private val picker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) Importer.import(applicationContext, uris)
+    }
+
+    /** Opens the system file picker for "Мои файлы". */
+    fun pickAudio() {
+        runOnUiThread {
+            try {
+                picker.launch(arrayOf("audio/*"))
+            } catch (_: Exception) {
+                js("window.__localAdded && window.__localAdded([])")
+            }
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,7 +88,12 @@ class MainActivity : ComponentActivity() {
                 val url = request.url
                 if (url.host == HOST) {
                     val path = url.path ?: ""
-                    if (path.startsWith("/api/")) return NetProxy.proxy(request)
+                    if (path.startsWith("/api/")) return NetProxy.proxy(request, NetProxy.audius(url))
+                    if (path.startsWith("/dz/")) return NetProxy.proxy(request, NetProxy.deezer(url))
+                    if (path == "/ext") {
+                        val target = NetProxy.external(url) ?: return NetProxy.forbidden()
+                        return NetProxy.proxy(request, target)
+                    }
                     if (path.startsWith("/offline/")) return Storage.serve(this@MainActivity, path, request.requestHeaders)
                 }
                 return assetLoader.shouldInterceptRequest(url)

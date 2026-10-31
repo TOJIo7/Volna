@@ -197,6 +197,13 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:0;border-radiu
 .qrow{padding-inline:18px}
 #toast{position:fixed;left:50%;bottom:calc(var(--tab-h) + var(--mini-h) + env(safe-area-inset-bottom,0px) + 24px);transform:translate(-50%,20px);background:var(--fg);color:#000;font-size:14px;font-weight:600;padding:11px 16px;border-radius:8px;opacity:0;transition:.25s;z-index:60;max-width:calc(100% - 48px);text-align:center;pointer-events:none}
 #toast.show{opacity:1;transform:translate(-50%,0)}
+.tag{font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--surface-3);color:var(--muted);flex:none;letter-spacing:.02em}
+a.opt{color:inherit;text-decoration:none}
+.local-cover{background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#fff}
+.fullbar{align-self:center;font-size:13px;color:rgba(255,255,255,.85);background:rgba(255,255,255,.12);border-radius:16px;padding:7px 14px}
+.fullbar b{color:var(--fg)}
+.hint{font-size:12px;color:var(--muted);margin:2px 0 8px}
+.subh{font-size:16px;margin:10px 0 4px}
 .demo-note{font-size:12px;color:var(--muted);background:var(--surface);border:1px dashed var(--dim);border-radius:8px;padding:10px 12px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -221,6 +228,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:0;border-radiu
 <div id="player" class="overlay" aria-hidden="true"><div class="pl" id="pl"></div></div>
 <div id="sheetWrap"><div class="scrim" data-act="closeSheet"></div><div class="sheet" id="sheet"></div></div>
 <div id="toast" role="status"></div>
+<input type="file" id="filePick" accept="audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.flac" multiple hidden>
 
 <script>
 (function(){
@@ -271,13 +279,14 @@ const I = {
   gear: sv('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
   clock: sv('<circle cx="12" cy="12" r="9.5"/><path d="M12 7v5l3 2"/>'),
   next2: sv('<path d="M4 6h10M4 12h10M4 18h6M18 9v10M14 15l4 4 4-4"/>'),
+  folder: sv('<path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M14 15.5V11l3-1"/><circle cx="12.5" cy="15.5" r="1.5"/>'),
   list: sv('<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>'),
 };
 
 /* ================== STATE ================== */
 const KEY = 'volna_v1';
 const defaults = () => ({
-  liked:{}, likedOrder:[], playlists:[], history:[], downloads:{}, recentSearch:[],
+  liked:{}, likedOrder:[], local:{}, localOrder:[], playlists:[], history:[], downloads:{}, recentSearch:[],
   settings:{ apiKey:'', autoplay:true, eq:{on:true, preset:'flat', gains:[0,0,0,0,0]} },
   last:null
 });
@@ -349,6 +358,81 @@ const searchUsers = q => cached('su:' + q, async () => (await api('/users/search
 const getUser = id => cached('u:' + id, async () => { const d = await api('/users/' + id); const u = d[0] || {}; return {id:String(u.id||id), name:u.name||u.handle||'Исполнитель', followers:u.follower_count||0, tracks:u.track_count||0, pic:(u.profile_picture||{})['480x480']||''}; });
 const userTracks = id => cached('ut:' + id, async () => tracksFrom(await api('/users/' + id + '/tracks', {sort:'plays', limit:50})));
 
+/* ---------- Deezer: the world catalog with 30-second previews ---------- */
+function normDz(t){
+  if (!t || !t.id) return null; const al = t.album || {};
+  return {id:'dz' + t.id, dzId:String(t.id), src:'deezer', title:t.title || 'Без названия', artist:(t.artist && t.artist.name) || 'Неизвестный',
+    artistId:'', art:al.cover_medium || al.cover_small || '', artL:al.cover_xl || al.cover_big || al.cover_medium || '', duration:30, genre:'', link:t.link || ''};
+}
+async function dzApi(path, params){
+  if (!NATIVE) {
+    DEMO = true;
+    const d = await demoApi(path === '/search' ? '/tracks/search' : '/tracks/trending', params && params.q ? {query:params.q} : {});
+    return d.map(norm).filter(Boolean).map(t => (T['dz' + t.id] = Object.assign({}, t, {id:'dz' + t.id, src:'deezer', artistId:'', link:''})));
+  }
+  const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const r = await fetch('/dz' + path + '?' + new URLSearchParams(params || {}), {signal:ctrl.signal});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json(); if (j.error) throw new Error(j.error.message || 'error');
+    const arr = Array.isArray(j.data) ? j.data : (j.id ? [j] : []);
+    return arr.map(normDz).filter(Boolean).map(t => (T[t.id] = t));
+  } finally { clearTimeout(to); }
+}
+const dzSearch = q => cached('dz:' + q, () => dzApi('/search', {q, limit:40}), 120000);
+const dzChart = () => cached('dzchart', () => dzApi('/chart/0/tracks', {limit:40}));
+async function dzPreviewSrc(t){
+  const r = await fetch('/dz/track/' + t.dzId); const j = await r.json();
+  if (!j.preview) throw new Error('no preview');
+  return '/ext?u=' + encodeURIComponent(j.preview);
+}
+
+/* ---------- My files: the person's own MP3s ---------- */
+const isLocal = t => !!t && t.src === 'local';
+const localTracks = () => S.localOrder.map(id => S.local[id]).filter(Boolean);
+function pickFiles(){
+  if (NATIVE) { try { window.VolnaNative.pickFiles(); } catch(e) { toast('Не получилось открыть файлы'); } return; }
+  $('#filePick').click();
+}
+window.__localImporting = n => toast('Добавляю ' + tracksWord(n) + '…');
+window.__localAdded = function(items){
+  let n = 0;
+  (items || []).forEach(m => {
+    const t = {id:m.id, src:'local', title:m.title || 'Без названия', artist:m.artist || 'Неизвестный исполнитель', artistId:'', art:'', artL:'',
+      duration:Math.round((m.duration || 0) / 1000), genre:'', hasArt:!!m.hasArt, size:m.size || 0, added:Date.now()};
+    S.local[t.id] = t; S.localOrder.unshift(t.id); T[t.id] = t; n++;
+  });
+  save(); toast(n ? 'Добавлено в «Мои файлы»: ' + tracksWord(n) : 'Аудиофайлы не найдены');
+  refreshIfShowing(['local','library','home']);
+};
+async function importBrowserFiles(files){
+  const out = [];
+  for (const f of files) {
+    if (!/^audio\//.test(f.type) && !/\.(mp3|m4a|aac|ogg|opus|wav|flac)$/i.test(f.name)) continue;
+    const id = 'loc' + uid();
+    try { await idbOp('readwrite', st => st.put(f, id)); } catch(e) { continue; }
+    const secs = await new Promise(res => { const a = new Audio(), u = URL.createObjectURL(f); a.preload = 'metadata'; a.onloadedmetadata = () => { res(a.duration || 0); URL.revokeObjectURL(u); }; a.onerror = () => res(0); a.src = u; });
+    const base = f.name.replace(/\.[^.]+$/, ''), parts = base.split(' - ');
+    out.push({id, title:parts.length > 1 ? parts.slice(1).join(' - ') : base, artist:parts.length > 1 ? parts[0] : '', duration:secs * 1000, size:f.size});
+  }
+  window.__localAdded(out);
+}
+async function removeLocal(id){
+  delete S.local[id]; S.localOrder = S.localOrder.filter(x => x !== id); save();
+  if (NATIVE) { try { window.VolnaNative.deleteLocal(id); } catch(e){} }
+  else { try { await idbOp('readwrite', st => st.delete(id)); } catch(e){} if (blobUrls[id]) { URL.revokeObjectURL(blobUrls[id]); delete blobUrls[id]; } }
+  refreshIfShowing(['local','library']);
+}
+function fullSheet(t, note){
+  const q = encodeURIComponent(t.artist + ' ' + t.title);
+  openSheet(`<div class="sh-head">${cover(t, 'sm')}<div class="meta"><div class="t">${esc(t.title)}</div><div class="s">${esc(t.artist)}</div></div></div>
+    ${note ? `<div class="muted" style="padding:10px 18px 0;font-size:14px">${esc(note)}</div>` : ''}<div class="body">
+    <a class="opt" href="https://www.youtube.com/results?search_query=${q}" target="_blank" rel="noopener">${I.play}<span>Слушать полностью в YouTube</span></a>
+    <a class="opt" href="https://open.spotify.com/search/${q}" target="_blank" rel="noopener">${I.music}<span>Открыть в Spotify</span></a>
+    ${t.link ? `<a class="opt" href="${esc(t.link)}" target="_blank" rel="noopener">${I.music}<span>Открыть в Deezer</span></a>` : ''}
+    ${opt('pickFiles', I.folder, 'Есть MP3 этой песни? Добавь в «Мои файлы»')}</div>`);
+}
+
 /* ---------- demo catalog (browser preview only) ---------- */
 const DEMO_ARTISTS = [['d1','Северный Ветер'],['d2','Лунный Код'],['d3','Тихая Гавань'],['d4','Неон 84'],['d5','Сад Камней']];
 const DEMO_TITLES = ['Огни над рекой','Полночный трамвай','Кофе и дождь','Ночной эфир','Солнце в проводах','Тёплый шум','Магнитофон','Высота 3000','Утро на Памире','Пустые улицы','Зелёный свет','Волны','Сквозь туман','Ретро-драйв','Медленный снег','Последний поезд','Акварель','Город спит','Сигнал','Карусель','Пыль дорог','Синий час','Ветер с гор','Отражения'];
@@ -409,24 +493,26 @@ async function idbOp(mode, fn){ const db = await idb(); return new Promise((res,
 const isDl = id => !!S.downloads[id];
 const blobUrls = {};
 async function offlineSrc(t){
-  if (NATIVE) return '/offline/music/' + t.id;
+  if (NATIVE) return (isLocal(t) ? '/offline/local/' : '/offline/music/') + t.id;
   if (blobUrls[t.id]) return blobUrls[t.id];
   const b = await idbOp('readonly', st => st.get(t.id));
   if (!b) return null;
   return (blobUrls[t.id] = URL.createObjectURL(b));
 }
 function artSrc(t, big){
-  if (NATIVE && S.downloads[t.id] && S.downloads[t.id].art) return '/offline/art/' + t.id;
+  if (NATIVE && ((S.downloads[t.id] && S.downloads[t.id].art) || (isLocal(t) && t.hasArt))) return '/offline/art/' + t.id;
   return big ? (t.artL || t.art) : (t.art || t.artL);
 }
 function updateDlInds(id){
   document.querySelectorAll('.dl-ind[data-id="' + id + '"]').forEach(el => el.innerHTML = dlInner(id));
   if (P.cur && P.cur.id === id) renderPlayerBottom();
 }
-function dlInner(id){ if (DL[id] != null) return `<span class="ring" style="--p:${DL[id]}"></span>`; return isDl(id) ? I.dlSmall : ''; }
+function dlInner(id){ if (S.local[id]) return '<span class="tag">файл</span>'; if (DL[id] != null) return `<span class="ring" style="--p:${DL[id]}"></span>`; return isDl(id) ? I.dlSmall : ''; }
 const dlInd = id => `<span class="dl-ind" data-id="${esc(id)}">${dlInner(id)}</span>`;
 
 async function download(t){
+  if (t.src === 'deezer') return fullSheet(t, 'Это отрывок на 30 секунд — его нельзя скачать. Полная песня:');
+  if (isLocal(t)) return toast('Этот трек уже хранится на телефоне');
   if (isDl(t.id) || DL[t.id] != null) return;
   if (!online) return toast('Нужен интернет, чтобы скачать трек');
   DL[t.id] = 0; T[t.id] = t; updateDlInds(t.id);
@@ -493,7 +579,7 @@ function playList(tracks, start, ctx, forceShuffle){
   else { P.queue = tracks.slice(); P.pos = start || 0; }
   loadCur(true);
 }
-function playable(t){ return online || isDl(t.id) || t.demo; }
+function playable(t){ return online || isDl(t.id) || t.demo || isLocal(t); }
 async function loadCur(autoplay){
   let guard = 0;
   while (P.queue[P.pos] && !playable(P.queue[P.pos]) && guard++ < P.queue.length) P.pos = (P.pos + 1) % P.queue.length;
@@ -501,7 +587,9 @@ async function loadCur(autoplay){
   if (!playable(t)) { toast('Нет интернета, а эти треки не скачаны'); return; }
   P.cur = t; P.fallback = false; T[t.id] = t;
   let src;
-  if (isDl(t.id)) src = await offlineSrc(t);
+  if (isDl(t.id) || isLocal(t)) src = await offlineSrc(t);
+  if (!src && isLocal(t)) { toast('Файл «' + t.title + '» не найден'); return; }
+  if (!src && t.src === 'deezer' && !t.demo) { try { src = await dzPreviewSrc(t); } catch(e) { toast('Отрывок «' + t.title + '» недоступен'); return; } }
   if (!src) src = t.demo ? demoSrc(t.id) : NATIVE ? proxiedStream(t.id) : remoteStream(t.id);
   audio.removeAttribute('crossorigin');
   audio.src = src;
@@ -543,7 +631,7 @@ audio.addEventListener('timeupdate', onTime);
 audio.addEventListener('loadedmetadata', onTime);
 audio.addEventListener('error', () => {
   if (!P.cur || !audio.src) return;
-  if (NATIVE && !P.fallback && !isDl(P.cur.id) && online) { P.fallback = true; audio.crossOrigin = 'anonymous'; audio.src = remoteStream(P.cur.id); audio.play().catch(() => {}); return; }
+  if (NATIVE && !P.fallback && !isDl(P.cur.id) && !P.cur.src && online) { P.fallback = true; audio.crossOrigin = 'anonymous'; audio.src = remoteStream(P.cur.id); audio.play().catch(() => {}); return; }
   toast('Не удалось включить «' + P.cur.title + '»');
   setTimeout(() => next(false), 1200);
 });
@@ -630,14 +718,14 @@ function plCover(pl, cls){
   if (arts.length) return `<div class="cover ${cls||''}" style="--h:${hue(pl.id)}"><img alt="" src="${esc(arts[0])}" onerror="this.remove()"></div>`;
   return `<div class="cover ${cls||''}" style="--h:${hue(pl.id)}"><span class="letter">${esc((pl.name||'?')[0].toUpperCase())}</span></div>`;
 }
-const specialCover = (kind, cls) => `<div class="cover ${kind}-cover ${cls||''}">${kind === 'liked' ? I.heartF : kind === 'dl' ? I.dlF : I.clock}</div>`;
+const specialCover = (kind, cls) => `<div class="cover ${kind}-cover ${cls||''}">${kind === 'liked' ? I.heartF : kind === 'dl' ? I.dlF : kind === 'local' ? I.folder : I.clock}</div>`;
 function regList(key, tracks, name){ LISTS[key] = {tracks, name}; tracks.forEach(t => T[t.id] = T[t.id] || t); return key; }
 function trackRow(t, key, i, opts){
   opts = opts || {};
   const cur = P.cur && P.cur.id === t.id;
   return `<div class="row ${cur ? 'playing' : ''}" data-act="playIdx" data-list="${esc(key)}" data-i="${i}" role="button" tabindex="0">
     ${opts.num ? `<span class="num">${i + 1}</span>` : ''}${cover(t, 'sm')}
-    <div class="meta"><div class="t">${esc(t.title)}</div><div class="s">${dlInd(t.id)}<span>${esc(t.artist)}${opts.genre && t.genre ? ' · ' + esc(genreName(t.genre)) : ''}</span></div></div>
+    <div class="meta"><div class="t">${esc(t.title)}</div><div class="s">${t.src === 'deezer' ? '<span class="tag">30 сек</span>' : ''}${dlInd(t.id)}<span>${esc(t.artist)}${opts.genre && t.genre ? ' · ' + esc(genreName(t.genre)) : ''}</span></div></div>
     <button class="ib" data-act="menu" data-id="${esc(t.id)}" data-ctx="${esc(opts.ctx||'')}" aria-label="Ещё">${I.more}</button></div>`;
 }
 const trackCard = (t, key, i) => `<button class="card" data-act="playIdx" data-list="${esc(key)}" data-i="${i}">${cover(t, 'md', true)}<div class="t">${esc(t.title)}</div><div class="s">${esc(t.artist)}</div></button>`;
@@ -675,7 +763,7 @@ window.handleBack = function(){
 function render(){
   const seq = ++renderSeq, v = top(), page = $('#page');
   const done = html => { if (seq === renderSeq) page.innerHTML = html; return seq === renderSeq; };
-  const views = {home:vHome, search:vSearch, library:vLibrary, playlist:vPlaylist, liked:vLiked, downloads:vDownloads, history:vHistory, artist:vArtist, genre:vGenre, settings:vSettings};
+  const views = {home:vHome, search:vSearch, library:vLibrary, playlist:vPlaylist, liked:vLiked, local:vLocal, downloads:vDownloads, history:vHistory, artist:vArtist, genre:vGenre, settings:vSettings};
   (views[v.type] || vHome)(v.arg, done, seq);
   syncPlaying();
 }
@@ -688,24 +776,30 @@ function vHome(_, done, seq){
   const quick = [];
   quick.push(`<button class="qi" data-act="go" data-type="liked">${specialCover('liked')}<span>Любимые треки</span></button>`);
   quick.push(`<button class="qi" data-act="go" data-type="downloads">${specialCover('dl')}<span>Скачанное</span></button>`);
-  S.playlists.slice(0, 4).forEach(pl => quick.push(`<button class="qi" data-act="go" data-type="playlist" data-arg="${esc(pl.id)}">${plCover(pl)}<span>${esc(pl.name)}</span></button>`));
+  quick.push(`<button class="qi" data-act="go" data-type="local">${specialCover('local')}<span>Мои файлы</span></button>`);
+  S.playlists.slice(0, 3).forEach(pl => quick.push(`<button class="qi" data-act="go" data-type="playlist" data-arg="${esc(pl.id)}">${plCover(pl)}<span>${esc(pl.name)}</span></button>`));
   if (quick.length % 2) quick.push(`<button class="qi" data-act="go" data-type="history">${specialCover('hist')}<span>История</span></button>`);
   const recent = S.history.slice(0, 12); const rk = regList('recent', recent, 'Недавно слушал');
-  const dls = Object.values(S.downloads).sort((a, b) => b.at - a.at).map(d => d.track);
+  const dls = localTracks().concat(Object.values(S.downloads).sort((a, b) => b.at - a.at).map(d => d.track));
   let html = `<div class="wrap"><div class="top"><h1>${greeting()}</h1><button class="ib" data-act="go" data-type="settings" aria-label="Настройки" style="color:var(--fg)">${I.gear}</button></div>
     <div class="quick">${quick.join('')}</div>`;
   if (!online) {
     const k = regList('offhome', dls, 'Скачанное');
-    html += `<div class="sec"><div class="banner">${I.wifiOff}<div><b>Ты офлайн</b><br>Доступна скачанная музыка — ${tracksWord(dls.length)}.</div></div>
+    html += `<div class="sec"><div class="banner">${I.wifiOff}<div><b>Ты офлайн</b><br>Доступны скачанные треки и «Мои файлы» — ${tracksWord(dls.length)}.</div></div>
       ${dls.length ? `<div class="list">${dls.map((t, i) => trackRow(t, k, i)).join('')}</div>` : emptyBox('Пока ничего не скачано', 'Когда будет интернет, нажми ⋯ у трека и выбери «Скачать».')}</div></div>`;
     return done(html);
   }
   if (DEMO) html += `<div class="sec"><div class="demo-note">Это превью: здесь работает демо-каталог со сгенерированной музыкой. В Android-приложении будет настоящий каталог Audius.</div></div>`;
+  html += `<div class="sec"><div class="sec-h"><h2>Мировые хиты</h2><span class="tag">отрывки 30 сек</span></div><div id="hitBox">${skelShelf()}</div></div>`;
   html += `<div class="sec"><div class="sec-h"><h2 id="recT">Для тебя</h2></div><div id="recBox">${skelShelf()}</div></div>`;
   if (recent.length) html += `<div class="sec"><div class="sec-h"><h2>Недавно слушал</h2><button class="link" data-act="go" data-type="history">Всё</button></div><div class="shelf">${recent.map((t, i) => trackCard(t, rk, i)).join('')}</div></div>`;
   html += `<div class="sec"><div class="sec-h"><h2>Тренды недели</h2><button class="link" data-act="go" data-type="genre" data-arg="">Всё</button></div><div id="trBox">${skelShelf()}</div></div>`;
   html += `<div class="sec"><h2>Жанры</h2><div class="genres">${GENRES.slice(0, 8).map(genreTile).join('')}</div></div></div>`;
   if (!done(html)) return;
+  dzChart().then(tr => {
+    if (seq !== renderSeq) return; const k = regList('hits', tr, 'Мировые хиты');
+    const box = $('#hitBox'); if (box) box.innerHTML = `<div class="shelf">${tr.slice(0, 20).map((t, i) => trackCard(t, k, i)).join('')}</div>`;
+  }).catch(() => { const box = $('#hitBox'); if (box) box.innerHTML = errBox('Проверь интернет и нажми «Главная» ещё раз.'); });
   getTrending('').then(tr => {
     if (seq !== renderSeq) return; const k = regList('trending', tr, 'Тренды недели');
     const box = $('#trBox'); if (box) box.innerHTML = `<div class="shelf">${tr.slice(0, 15).map((t, i) => trackCard(t, k, i)).join('')}</div>`;
@@ -732,11 +826,11 @@ async function recommendations(){
 }
 
 /* ---------- Search ---------- */
-let searchQ = '', searchMode = 'tracks', searchTimer;
+let searchQ = '', searchMode = 'all', searchTimer;
 function vSearch(_, done){
   const html = `<div class="wrap"><div class="top" style="padding-bottom:0"><h1>Поиск</h1></div>
     <div class="search-sticky"><label class="searchbox">${I.search}<input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Что хочешь послушать?" value="${esc(searchQ)}"><button class="ib" id="qClear" data-act="clearSearch" ${searchQ ? '' : 'hidden'} style="width:28px;height:28px;color:#121212" aria-label="Очистить">${I.close}</button></label>
-    <div class="chips" id="sChips" style="margin-top:10px" ${searchQ ? '' : 'hidden'}><button class="chip ${searchMode==='tracks'?'on':''}" data-act="sMode" data-m="tracks">Треки</button><button class="chip ${searchMode==='artists'?'on':''}" data-act="sMode" data-m="artists">Исполнители</button></div></div>
+    <div class="chips" id="sChips" style="margin-top:10px" ${searchQ ? '' : 'hidden'}><button class="chip ${searchMode==='all'?'on':''}" data-act="sMode" data-m="all">Все песни</button><button class="chip ${searchMode==='tracks'?'on':''}" data-act="sMode" data-m="tracks">Полные треки</button><button class="chip ${searchMode==='artists'?'on':''}" data-act="sMode" data-m="artists">Исполнители</button></div></div>
     <div id="sRes"></div></div>`;
   if (!done(html)) return;
   const q = $('#q');
@@ -754,18 +848,26 @@ async function runSearch(){
     return;
   }
   if (!online) {
-    const l = q.toLowerCase(); const res = Object.values(S.downloads).map(d => d.track).filter(t => (t.title + ' ' + t.artist).toLowerCase().includes(l));
+    const l = q.toLowerCase(); const res = localTracks().concat(Object.values(S.downloads).map(d => d.track)).filter(t => (t.title + ' ' + t.artist).toLowerCase().includes(l));
     const k = regList('sOff', res, 'Поиск в скачанном');
     box.innerHTML = `<div class="banner" style="margin-bottom:10px">${I.wifiOff}<div>Офлайн — ищу только среди скачанного.</div></div>` + (res.length ? `<div class="list">${res.map((t, i) => trackRow(t, k, i)).join('')}</div>` : emptyBox('Ничего не нашлось', 'Среди скачанных треков нет «' + q + '».'));
     return;
   }
   const mode = searchMode;
-  box.innerHTML = skelRows(7);
+  const ql = q.toLowerCase(), loc = localTracks().filter(t => (t.title + ' ' + t.artist).toLowerCase().includes(ql));
+  const lk = regList('sLoc', loc, 'Мои файлы');
+  const locHtml = loc.length && mode !== 'artists' ? `<h2 class="subh">Мои файлы</h2><div class="list">${loc.map((t, i) => trackRow(t, lk, i)).join('')}</div><h2 class="subh" style="margin-top:18px">В каталоге</h2>` : '';
+  box.innerHTML = locHtml + skelRows(7);
   try {
-    if (mode === 'tracks') {
+    if (mode === 'all') {
+      const res = await dzSearch(q); if (searchQ.trim() !== q || mode !== searchMode) return;
+      const k = regList('sAll', res, 'Поиск: ' + q);
+      box.innerHTML = locHtml + `<div class="hint">Отрывки по 30 секунд. Полную песню открой через ⋯ → «Слушать полностью» или добавь свой MP3 в «Мои файлы».</div>`
+        + (res.length ? `<div class="list">${res.map((t, i) => trackRow(t, k, i)).join('')}</div>` : emptyBox('Ничего не нашлось', 'Попробуй написать название латиницей, например «love me not».'));
+    } else if (mode === 'tracks') {
       const res = await searchTracks(q); if (searchQ.trim() !== q || mode !== searchMode) return;
       const k = regList('sRes', res, 'Поиск: ' + q);
-      box.innerHTML = res.length ? `<div class="list">${res.map((t, i) => trackRow(t, k, i, {genre:true})).join('')}</div>` : emptyBox('Ничего не нашлось', 'Попробуй другое название или имя исполнителя.');
+      box.innerHTML = locHtml + `<div class="hint">Полные треки независимых артистов из Audius — их можно скачать.</div>` + (res.length ? `<div class="list">${res.map((t, i) => trackRow(t, k, i, {genre:true})).join('')}</div>` : emptyBox('Ничего не нашлось', 'Здесь только независимые артисты. Известные песни ищи во вкладке «Все песни».'));
     } else {
       const res = await searchUsers(q); if (searchQ.trim() !== q || mode !== searchMode) return;
       box.innerHTML = res.length ? `<div class="list">${res.map(u => `<div class="row" data-act="go" data-type="artist" data-arg="${esc(u.id)}" role="button" tabindex="0"><div class="cover sm round" style="--h:${hue(u.id)}">${I.user}${u.pic ? `<img alt="" src="${esc(u.pic)}" onerror="this.remove()">` : ''}</div><div class="meta"><div class="t">${esc(u.name)}</div><div class="s"><span>Исполнитель · ${plural(u.followers, 'подписчик', 'подписчика', 'подписчиков')}</span></div></div></div>`).join('')}</div>` : emptyBox('Исполнители не найдены', 'Проверь написание имени.');
@@ -778,6 +880,7 @@ function vLibrary(_, done){
   const dlCount = Object.keys(S.downloads).length;
   const rows = [
     `<div class="row lib-row" data-act="go" data-type="liked" role="button" tabindex="0">${specialCover('liked')}<div class="meta"><div class="t">Любимые треки</div><div class="s"><span>Плейлист · ${tracksWord(S.likedOrder.length)}</span></div></div></div>`,
+    `<div class="row lib-row" data-act="go" data-type="local" role="button" tabindex="0">${specialCover('local')}<div class="meta"><div class="t">Мои файлы</div><div class="s"><span>MP3 с телефона · ${tracksWord(S.localOrder.length)}</span></div></div></div>`,
     `<div class="row lib-row" data-act="go" data-type="downloads" role="button" tabindex="0">${specialCover('dl')}<div class="meta"><div class="t">Скачанное</div><div class="s"><span>Офлайн · ${tracksWord(dlCount)}</span></div></div></div>`,
     `<div class="row lib-row" data-act="go" data-type="history" role="button" tabindex="0">${specialCover('hist')}<div class="meta"><div class="t">История</div><div class="s"><span>${tracksWord(S.history.length)}</span></div></div></div>`
   ].concat(S.playlists.map(pl => `<div class="row lib-row" data-act="go" data-type="playlist" data-arg="${esc(pl.id)}" role="button" tabindex="0">${plCover(pl)}<div class="meta"><div class="t">${esc(pl.name)}</div><div class="s"><span>Плейлист · ${tracksWord(pl.tracks.length)}</span></div></div></div>`));
@@ -805,6 +908,13 @@ function vLiked(_, done){
   const tr = likedTracks();
   done(collectionPage({key:'liked', name:'Любимые треки', tracks:tr, cover:specialCover('liked', ''), sub:tracksWord(tr.length),
     empty:emptyBox('Здесь будут треки, которые понравились', 'Нажми ♡ у любого трека.')}));
+}
+function vLocal(_, done){
+  const tr = localTracks(); const size = tr.reduce((a, t) => a + (t.size || 0), 0);
+  done(collectionPage({key:'local', name:'Мои файлы', tracks:tr, cover:specialCover('local', ''), ctx:'local', dlBtn:false,
+    sub:tracksWord(tr.length) + (size ? ' · ' + fmtSize(size) : '') + ' · играют без интернета',
+    extra:`<button class="btn ghost" style="height:36px;padding-inline:14px" data-act="pickFiles">+ Добавить файлы</button>`,
+    empty:`<div class="empty"><b>Добавь свою музыку</b><span>Выбери MP3 на телефоне — из «Загрузок», Telegram или любой папки. Они будут играть без интернета, их можно добавлять в плейлисты.</span><button class="btn accent" data-act="pickFiles">Выбрать файлы</button></div>`}));
 }
 function vDownloads(_, done){
   const ds = Object.values(S.downloads).sort((a, b) => b.at - a.at); const tr = ds.map(d => d.track);
@@ -846,7 +956,7 @@ function vSettings(_, done){
     <div class="setrow"><div class="meta"><div>Память</div><div class="s">Скачано ${tracksWord(Object.keys(S.downloads).length)}${size ? ' · ' + fmtSize(size) : ''}</div></div><button class="btn ghost" style="height:36px;padding-inline:14px" data-act="dlMenu">Управлять</button></div>
     <div class="setrow" style="flex-direction:column;align-items:stretch"><div class="meta"><div>Ключ Audius API</div><div class="s">Необязательно. Пригодится, если каталог начнёт отвечать с ограничениями.</div></div><input class="field" id="apiKey" placeholder="Вставь ключ" value="${esc(e.apiKey)}" autocomplete="off"></div>
     <div class="setrow" data-act="clearHistory" role="button" tabindex="0"><div class="meta"><div>Очистить историю</div><div class="s">Также сбросит рекомендации</div></div></div>
-    <div class="setrow"><div class="meta"><div>О приложении</div><div class="s">Волна 1.0 · музыка из открытого каталога Audius, где артисты сами публикуют свои треки</div></div></div></div>`);
+    <div class="setrow"><div class="meta"><div>О приложении</div><div class="s">Волна 1.1 · полные треки из Audius, отрывки популярных песен из Deezer и твои MP3 в «Моих файлах»</div></div></div></div>`);
   $('#apiKey').addEventListener('change', ev => { S.settings.apiKey = ev.target.value.trim(); save(); cache.clear(); toast('Ключ сохранён'); });
 }
 
@@ -867,6 +977,7 @@ function renderPlayer(){
   $('#pl').innerHTML = `<div class="pl-top"><button class="ib" data-act="closePlayer" style="color:var(--fg)" aria-label="Свернуть">${I.down}</button><div class="ctx"><small>Играет из</small><b>${esc(P.ctx || 'Музыка')}</b></div><button class="ib" data-act="menu" data-id="${esc(t.id)}" style="color:var(--fg)" aria-label="Ещё">${I.more}</button></div>
     <div class="pl-art">${cover(t, '', true).replace('<div class="cover ', '<div class="cover ')}</div>
     <div class="pl-info"><div class="meta"><div class="t">${esc(t.title)}</div><div class="s" data-act="goArtist" data-id="${esc(t.artistId)}">${esc(t.artist)}</div></div><button class="ib ${isLiked(t.id) ? 'on' : ''}" data-act="likeCur" style="${isLiked(t.id) ? '' : 'color:var(--fg)'}" aria-label="Нравится">${isLiked(t.id) ? I.heartF : I.heart}</button></div>
+    ${t.src === 'deezer' ? `<button class="fullbar" data-act="fullVer" data-id="${esc(t.id)}">Отрывок 30 сек · <b>Слушать полностью</b></button>` : ''}
     <div class="seek"><input type="range" id="seek" min="0" max="1000" value="0" aria-label="Перемотка"><div class="times"><span id="tCur">0:00</span><span id="tDur">${fmt(t.duration)}</span></div></div>
     <div class="ctrls"><button class="ib ${P.shuffle ? 'on' : ''}" data-act="shuffle" aria-label="Перемешать">${I.shuffle}</button><button class="ib" data-act="prev" aria-label="Предыдущий">${I.prev}</button><button class="pp" id="plPP" data-act="toggle" aria-label="Играть">${audio.paused ? I.play : I.pause}</button><button class="ib" data-act="next" aria-label="Следующий">${I.next}</button><button class="ib ${P.repeat !== 'off' ? 'on' : ''}" data-act="repeat" aria-label="Повтор">${P.repeat === 'one' ? I.repeat1 : I.repeat}</button></div>
     <div class="pl-bottom" id="plBottom"></div>`;
@@ -878,8 +989,8 @@ function renderPlayer(){
 function renderPlayerBottom(){
   const b = $('#plBottom'); if (!b || !P.cur) return; const t = P.cur;
   let sl = ''; if (sleepT.end) sl = `<span class="badge">${Math.ceil((sleepT.end - Date.now()) / 60000)}</span>`; else if (sleepT.endOfTrack) sl = '<span class="badge">♪</span>';
-  const dlState = DL[t.id] != null ? `<span class="ring" style="--p:${DL[t.id]};width:22px;height:22px"></span>` : isDl(t.id) ? I.dlF : I.dl;
-  b.innerHTML = `<button class="ib ${isDl(t.id) ? 'on' : ''}" data-act="dlCur" aria-label="Скачать">${dlState}</button><button class="ib ${sleepT.end || sleepT.endOfTrack ? 'on' : ''}" data-act="sleepSheet" aria-label="Таймер сна">${I.moon}${sl}</button><button class="ib ${S.settings.eq.on && S.settings.eq.preset !== 'flat' ? 'on' : ''}" data-act="openEq" aria-label="Эквалайзер">${I.eq}</button><button class="ib" data-act="queueSheet" aria-label="Очередь">${I.queue}</button>`;
+  const dlState = isLocal(t) ? I.folder : DL[t.id] != null ? `<span class="ring" style="--p:${DL[t.id]};width:22px;height:22px"></span>` : isDl(t.id) ? I.dlF : I.dl;
+  b.innerHTML = `<button class="ib ${isDl(t.id) || isLocal(t) ? 'on' : ''}" data-act="dlCur" aria-label="Скачать">${dlState}</button><button class="ib ${sleepT.end || sleepT.endOfTrack ? 'on' : ''}" data-act="sleepSheet" aria-label="Таймер сна">${I.moon}${sl}</button><button class="ib ${S.settings.eq.on && S.settings.eq.preset !== 'flat' ? 'on' : ''}" data-act="openEq" aria-label="Эквалайзер">${I.eq}</button><button class="ib" data-act="queueSheet" aria-label="Очередь">${I.queue}</button>`;
 }
 function openPlayer(){ if (!P.cur) return; renderPlayer(); const p = $('#player'); p.classList.add('open'); p.setAttribute('aria-hidden', 'false'); }
 function closePlayer(){ const p = $('#player'); p.classList.remove('open'); p.setAttribute('aria-hidden', 'true'); }
@@ -890,7 +1001,7 @@ function closeSheet(){ $('#sheetWrap').classList.remove('open'); }
 const opt = (act, icon, label, data, cls) => `<button class="opt ${cls||''}" data-act="${act}" ${data||''}>${icon}<span>${esc(label)}</span></button>`;
 function trackMenu(id, ctx){
   const t = T[id] || (P.cur && P.cur.id === id ? P.cur : null); if (!t) return;
-  const dlOpt = DL[id] != null ? opt('noop', I.dl, 'Скачивается… ' + DL[id] + '%') : isDl(id) ? opt('rmDl', I.dlF, 'Удалить из скачанного', `data-id="${esc(id)}"`, 'on') : opt('dl', I.dl, 'Скачать', `data-id="${esc(id)}"`);
+  const dlOpt = t.src === 'deezer' ? opt('fullVer', I.play, 'Слушать полностью', `data-id="${esc(id)}"`) : isLocal(t) ? opt('rmLocal', I.trash, 'Удалить из «Моих файлов»', `data-id="${esc(id)}"`, 'danger') : DL[id] != null ? opt('noop', I.dl, 'Скачивается… ' + DL[id] + '%') : isDl(id) ? opt('rmDl', I.dlF, 'Удалить из скачанного', `data-id="${esc(id)}"`, 'on') : opt('dl', I.dl, 'Скачать', `data-id="${esc(id)}"`);
   openSheet(`<div class="sh-head">${cover(t, 'sm')}<div class="meta"><div class="t">${esc(t.title)}</div><div class="s">${esc(t.artist)}</div></div></div><div class="body">
     ${opt('like', isLiked(id) ? I.heartF : I.heart, isLiked(id) ? 'Убрать из любимых' : 'Добавить в любимые', `data-id="${esc(id)}"`, isLiked(id) ? 'on' : '')}
     ${opt('addPl', I.plusC, 'Добавить в плейлист', `data-id="${esc(id)}"`)}
@@ -956,7 +1067,10 @@ const actions = {
   openPlayer: () => openPlayer(), closePlayer: () => closePlayer(),
   toggle: () => toggle(), next: () => next(false), prev: () => prev(), shuffle: () => toggleShuffle(), repeat: () => cycleRepeat(),
   likeCur: () => toggleLike(P.cur),
-  dlCur: () => { if (!P.cur) return; if (isDl(P.cur.id)) confirmSheet('Удалить из скачанного?', '«' + P.cur.title + '» не будет доступен без интернета.', 'Удалить', () => removeDownload(P.cur.id)); else download(P.cur); renderPlayerBottom(); },
+  fullVer: el => fullSheet(T[el.dataset.id] || P.cur),
+  pickFiles: () => { closeSheet(); pickFiles(); },
+  rmLocal: el => { closeSheet(); const t = T[el.dataset.id]; confirmSheet('Удалить «' + (t ? t.title : 'файл') + '»?', 'Файл удалится из приложения. Из плейлистов он тоже пропадёт при воспроизведении.', 'Удалить', () => { removeLocal(el.dataset.id); toast('Удалено'); }); },
+  dlCur: () => { if (!P.cur) return; if (isLocal(P.cur)) return toast('Этот трек хранится на телефоне'); if (isDl(P.cur.id)) confirmSheet('Удалить из скачанного?', '«' + P.cur.title + '» не будет доступен без интернета.', 'Удалить', () => removeDownload(P.cur.id)); else download(P.cur); renderPlayerBottom(); },
   menu: el => trackMenu(el.dataset.id, el.dataset.ctx),
   closeSheet: () => closeSheet(),
   like: el => { closeSheet(); toggleLike(T[el.dataset.id]); },
@@ -1019,6 +1133,14 @@ if (NATIVE) {
   } catch(e){}
 }
 Object.values(S.downloads).forEach(d => T[d.track.id] = d.track);
+localTracks().forEach(t => T[t.id] = t);
+if (NATIVE) {
+  try {
+    const ids = new Set(JSON.parse(window.VolnaNative.listLocal() || '[]'));
+    S.localOrder.forEach(id => { if (!ids.has(id)) delete S.local[id]; }); S.localOrder = S.localOrder.filter(id => S.local[id]); save();
+  } catch(e){}
+}
+$('#filePick').addEventListener('change', e => { const f = Array.from(e.target.files || []); e.target.value = ''; if (f.length) { toast('Добавляю ' + tracksWord(f.length) + '…'); importBrowserFiles(f); } });
 if (S.last && S.last.queue && S.last.queue.length) {
   P.queue = S.last.queue; P.original = S.last.queue.slice(); P.pos = Math.min(S.last.pos || 0, P.queue.length - 1);
   P.shuffle = !!S.last.shuffle; P.repeat = S.last.repeat || 'off'; P.ctx = S.last.ctx || ''; P.cur = P.queue[P.pos];

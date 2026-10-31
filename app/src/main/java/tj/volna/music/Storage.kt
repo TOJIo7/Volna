@@ -14,6 +14,13 @@ object Storage {
     fun validId(id: String) = ID.matches(id)
     fun musicDir(ctx: Context) = File(ctx.filesDir, "music").apply { mkdirs() }
     fun artDir(ctx: Context) = File(ctx.filesDir, "art").apply { mkdirs() }
+    fun localDir(ctx: Context) = File(ctx.filesDir, "local").apply { mkdirs() }
+    fun localFile(ctx: Context, id: String): File? = localDir(ctx).listFiles()?.firstOrNull { it.name.startsWith("$id.") }
+    fun listLocal(ctx: Context): List<String> = localDir(ctx).listFiles()?.map { it.name.substringBefore('.') } ?: emptyList()
+    fun deleteLocal(ctx: Context, id: String) {
+        localFile(ctx, id)?.delete()
+        artFile(ctx, id).delete()
+    }
     fun musicFile(ctx: Context, id: String) = File(musicDir(ctx), "$id.mp3")
     fun artFile(ctx: Context, id: String) = File(artDir(ctx), "$id.jpg")
 
@@ -36,10 +43,15 @@ object Storage {
         val file = when (parts[2]) {
             "music" -> musicFile(ctx, id)
             "art" -> artFile(ctx, id)
+            "local" -> localFile(ctx, id) ?: return notFound()
             else -> return notFound()
         }
         if (!file.exists()) return notFound()
-        val mime = if (parts[2] == "art") "image/jpeg" else "audio/mpeg"
+        val mime = when {
+            parts[2] == "art" -> "image/jpeg"
+            parts[2] == "local" -> audioMime(file.extension)
+            else -> "audio/mpeg"
+        }
         val len = file.length()
         val out = HashMap<String, String>()
         out["Accept-Ranges"] = "bytes"
@@ -69,6 +81,15 @@ object Storage {
         }
         out["Content-Length"] = len.toString()
         return WebResourceResponse(mime, null, 200, "OK", out, FileInputStream(file))
+    }
+
+    private fun audioMime(ext: String): String = when (ext.lowercase()) {
+        "m4a", "aac", "mp4" -> "audio/mp4"
+        "ogg", "oga", "opus" -> "audio/ogg"
+        "wav" -> "audio/wav"
+        "flac" -> "audio/flac"
+        "webm" -> "audio/webm"
+        else -> "audio/mpeg"
     }
 
     private fun skipFully(input: InputStream, n: Long) {

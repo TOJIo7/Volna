@@ -33,6 +33,17 @@ class NativeBridge(private val activity: MainActivity) {
     fun listDownloads(): String = JSONArray(Storage.list(activity)).toString()
 
     @JavascriptInterface
+    fun pickFiles() = activity.pickAudio()
+
+    @JavascriptInterface
+    fun listLocal(): String = JSONArray(Storage.listLocal(activity)).toString()
+
+    @JavascriptInterface
+    fun deleteLocal(id: String) {
+        if (Storage.validId(id)) Storage.deleteLocal(activity, id)
+    }
+
+    @JavascriptInterface
     fun storageBytes(): Long = Storage.totalBytes(activity)
 
     @JavascriptInterface
