@@ -9,6 +9,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
 import android.os.Bundle
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -89,6 +90,7 @@ class MainActivity : ComponentActivity() {
                 if (url.host == HOST) {
                     val path = url.path ?: ""
                     if (path.startsWith("/api/")) return NetProxy.proxy(request, NetProxy.audius(url))
+                    if (path == "/yt/search") return YouTube.search(url.getQueryParameter("q") ?: "")
                     if (path.startsWith("/dz/")) return NetProxy.proxy(request, NetProxy.deezer(url))
                     if (path == "/ext") {
                         val target = NetProxy.external(url) ?: return NetProxy.forbidden()
@@ -100,7 +102,8 @@ class MainActivity : ComponentActivity() {
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                if (request.url.host == HOST) return false
+                // The YouTube player lives in a frame inside the page: let it load there.
+                if (!request.isForMainFrame || request.url.host == HOST) return false
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, request.url))
                 } catch (_: Exception) {
@@ -108,6 +111,8 @@ class MainActivity : ComponentActivity() {
                 return true
             }
         }
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
         web.webChromeClient = WebChromeClient()
         web.addJavascriptInterface(NativeBridge(this), "VolnaNative")
         web.loadUrl("https://$HOST/assets/www/index.html")
