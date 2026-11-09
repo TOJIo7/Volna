@@ -720,6 +720,7 @@ audio.addEventListener('error', () => {
 });
 function syncPlaying(){
   const playing = !isPaused();
+  if (NATIVE && playing && !S.bgAsked) { S.bgAsked = true; save(); try { if (!window.VolnaNative.backgroundAllowed()) setTimeout(bgSheet, 600); } catch(e){} }
   const pp = playing ? I.pause : I.play;
   $('#miniPP').innerHTML = pp; const b = $('#plPP'); if (b) b.innerHTML = pp;
   document.querySelectorAll('.bigplay[data-ctxname]').forEach(el => el.innerHTML = (playing && el.dataset.ctxname === P.ctx) ? I.pause : I.play);
@@ -1035,12 +1036,13 @@ function vSettings(_, done){
   const e = S.settings; const size = Object.values(S.downloads).reduce((a, d) => a + (d.size || 0), 0);
   done(`<div class="wrap">${phead('Настройки')}<h1 style="margin-bottom:8px">Настройки</h1>
     <div class="setrow" data-act="toggleSetting" data-k="autoplay" role="button" tabindex="0"><div class="meta"><div>Автовоспроизведение</div><div class="s">Когда очередь закончится, включать похожую музыку</div></div><span class="switch ${e.autoplay ? 'on' : ''}"></span></div>
+    ${NATIVE ? `<div class="setrow" data-act="askBg" role="button" tabindex="0"><div class="meta"><div>Музыка при выключенном экране</div><div class="s">${(() => { try { return window.VolnaNative.backgroundAllowed(); } catch(e) { return false; } })() ? 'Разрешено — телефон не будет останавливать музыку' : 'Нажми, чтобы разрешить работу в фоне'}</div></div></div>` : ''}
     <div class="setrow" data-act="toggleSetting" data-k="saver" role="button" tabindex="0"><div class="meta"><div>Экономия трафика</div><div class="s">Маленькое окно видео — YouTube сам выбирает низкое качество (144–240p)</div></div><span class="switch ${e.saver ? 'on' : ''}"></span></div>
     <div class="setrow" data-act="openEq" role="button" tabindex="0"><div class="meta"><div>Эквалайзер</div><div class="s">${esc(EQ_PRESETS[e.eq.preset] ? EQ_PRESETS[e.eq.preset][0] : 'Свой')}${e.eq.on ? '' : ' · выключен'}</div></div>${I.eq}</div>
     <div class="setrow"><div class="meta"><div>Память</div><div class="s">Скачано ${tracksWord(Object.keys(S.downloads).length)}${size ? ' · ' + fmtSize(size) : ''}</div></div><button class="btn ghost" style="height:36px;padding-inline:14px" data-act="dlMenu">Управлять</button></div>
     <div class="setrow" style="flex-direction:column;align-items:stretch"><div class="meta"><div>Ключ Audius API</div><div class="s">Необязательно. Пригодится, если каталог начнёт отвечать с ограничениями.</div></div><input class="field" id="apiKey" placeholder="Вставь ключ" value="${esc(e.apiKey)}" autocomplete="off"></div>
     <div class="setrow" data-act="clearHistory" role="button" tabindex="0"><div class="meta"><div>Очистить историю</div><div class="s">Также сбросит рекомендации</div></div></div>
-    <div class="setrow"><div class="meta"><div>О приложении</div><div class="s">Волна 1.2 · песни с YouTube, полные треки из Audius и твои MP3 в «Моих файлах»</div></div></div></div>`);
+    <div class="setrow"><div class="meta"><div>О приложении</div><div class="s">Волна 1.3 · песни с YouTube, полные треки из Audius и твои MP3 в «Моих файлах»</div></div></div></div>`);
   $('#apiKey').addEventListener('change', ev => { S.settings.apiKey = ev.target.value.trim(); save(); cache.clear(); toast('Ключ сохранён'); });
 }
 
@@ -1106,6 +1108,9 @@ function promptSheet(title, value, onOk, okLabel){
 function confirmSheet(title, text, okLabel, onOk){
   openSheet(`<div class="sh-title">${esc(title)}</div><div class="sh-pad"><div class="muted">${esc(text)}</div><div class="sh-btns"><button class="btn ghost" data-act="closeSheet">Отмена</button><button class="btn" id="cOk" style="background:var(--danger);color:#000">${esc(okLabel)}</button></div></div>`);
   $('#cOk').addEventListener('click', () => { closeSheet(); onOk(); });
+}
+function bgSheet(){
+  openSheet(`<div class="sh-title">Музыка при выключенном экране</div><div class="sh-pad"><div class="muted">Чтобы телефон не останавливал музыку, разреши «Волне» работать в фоне. На следующем экране нажми «Разрешить».</div><div class="sh-btns"><button class="btn ghost" data-act="closeSheet">Позже</button><button class="btn accent" data-act="askBg">Разрешить</button></div></div>`);
 }
 function sleepSheet(){
   const on = sleepT.end || sleepT.endOfTrack;
@@ -1174,6 +1179,7 @@ const actions = {
   histMenu: () => confirmSheet('Очистить историю?', 'Рекомендации начнут собираться заново.', 'Очистить', () => { S.history = []; save(); render(); }),
   clearHistory: () => actions.histMenu(),
   sleepSheet: () => sleepSheet(),
+  askBg: () => { closeSheet(); try { window.VolnaNative.askBackground(); } catch(e) { toast('Открой настройки телефона → Батарея → «Волна» → Без ограничений'); } },
   sleep: el => { closeSheet(); const m = el.dataset.m; if (m === '0') { stopSleep(); toast('Таймер выключен'); } else setSleep(m === 'track' ? 'track' : +m); },
   openEq: () => eqSheet(),
   eqToggle: el => { S.settings.eq.on = !S.settings.eq.on; el.classList.toggle('on', S.settings.eq.on); applyEq(); save(); renderPlayerBottom(); refreshIfShowing(['settings']); },

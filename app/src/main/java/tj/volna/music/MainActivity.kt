@@ -23,6 +23,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.webkit.WebViewAssetLoader
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 
 class MainActivity : ComponentActivity() {
 
@@ -30,9 +32,23 @@ class MainActivity : ComponentActivity() {
         const val HOST = "appassets.androidplatform.net"
         @Volatile
         var instance: MainActivity? = null
+        @Volatile
+        var playingNow = false
+
+        /** Pages always report themselves as visible, so players do not pause when the screen is off. */
+        private const val KEEP_VISIBLE = "(function(){try{" +
+            "var P=Document.prototype;" +
+            "Object.defineProperty(P,'hidden',{get:function(){return false},configurable:true});" +
+            "Object.defineProperty(P,'visibilityState',{get:function(){return 'visible'},configurable:true});" +
+            "Object.defineProperty(P,'webkitHidden',{get:function(){return false},configurable:true});" +
+            "Object.defineProperty(P,'webkitVisibilityState',{get:function(){return 'visible'},configurable:true});" +
+            "var stop=function(e){e.stopImmediatePropagation();};" +
+            "['visibilitychange','webkitvisibilitychange'].forEach(function(n){document.addEventListener(n,stop,true);window.addEventListener(n,stop,true);});" +
+            "window.addEventListener('pagehide',stop,true);window.addEventListener('blur',stop,true);" +
+            "}catch(e){}})();"
     }
 
-    private lateinit var web: WebView
+    private lateinit var web: BgWebView
     private lateinit var assetLoader: WebViewAssetLoader
     private var netCallback: ConnectivityManager.NetworkCallback? = null
     private val picker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -57,7 +73,7 @@ class MainActivity : ComponentActivity() {
 
         val root = FrameLayout(this)
         root.setBackgroundColor(Color.parseColor("#121212"))
-        web = WebView(this)
+        web = BgWebView(this)
         web.setBackgroundColor(Color.parseColor("#121212"))
         root.addView(web, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         setContentView(root)
@@ -115,6 +131,15 @@ class MainActivity : ComponentActivity() {
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
         web.webChromeClient = WebChromeClient()
         web.addJavascriptInterface(NativeBridge(this), "VolnaNative")
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            try {
+                WebViewCompat.addDocumentStartJavaScript(
+                    web, KEEP_VISIBLE,
+                    setOf("https://www.youtube.com", "https://www.youtube-nocookie.com", "https://$HOST")
+                )
+            } catch (_: Exception) {
+            }
+        }
         web.loadUrl("https://$HOST/assets/www/index.html")
 
         onBackPressedDispatcher.addCallback(this) {

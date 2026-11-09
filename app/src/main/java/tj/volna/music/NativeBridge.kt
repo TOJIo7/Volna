@@ -1,6 +1,10 @@
 package tj.volna.music
 
+import android.annotation.SuppressLint
 import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
 import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
@@ -43,11 +47,37 @@ class NativeBridge(private val activity: MainActivity) {
         if (Storage.validId(id)) Storage.deleteLocal(activity, id)
     }
 
+    /** True when the phone lets the app keep running in the background. */
+    @JavascriptInterface
+    fun backgroundAllowed(): Boolean {
+        val pm = activity.getSystemService(PowerManager::class.java) ?: return true
+        return pm.isIgnoringBatteryOptimizations(activity.packageName)
+    }
+
+    /** Opens the phone's prompt to let the app run in the background. */
+    @SuppressLint("BatteryLife")
+    @JavascriptInterface
+    fun askBackground() {
+        activity.runOnUiThread {
+            try {
+                activity.startActivity(
+                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + activity.packageName))
+                )
+            } catch (_: Exception) {
+                try {
+                    activity.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
+
     @JavascriptInterface
     fun storageBytes(): Long = Storage.totalBytes(activity)
 
     @JavascriptInterface
     fun updatePlayback(title: String, artist: String, playing: Boolean) {
+        MainActivity.playingNow = playing
         main.post {
             val svc = PlaybackService.instance
             if (svc != null) {
